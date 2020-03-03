@@ -49,7 +49,7 @@ String postid;
 String data_id;
 String data_lightning_invoice_payreq = "";
 String data_status;
-bool settle = false;
+bool settle = true;
 String payreq;
 String hash;
 String virtkey;
@@ -105,6 +105,17 @@ void setup()
     tft.drawXBitmap(0, 66, middlemap, 160, 28, TFT_BLUE, TFT_BLACK);
     delay(10);
   }
+
+  //Checkpayment function moved on core 0
+  xTaskCreatePinnedToCore(
+      checkpayment,   /* Function to implement the task */
+      "checkpayment", /* Name of the task */
+      10000,          /* Stack size in words */
+      NULL,           /* Task input parameter */
+      0,              /* Priority of the task */
+      NULL,           /* Task handle. */
+      0);             /* Core where the task should run */
+
   page_nodecheck();
   on_rates();
 }
@@ -115,7 +126,6 @@ void loop()
   page_input();
   displaysats();
   bool cntr = false;
-  settle = false; // To allow consecutive transactions
   Serial.println("Ready");
   while (cntr != true)
   {
@@ -133,8 +143,7 @@ void loop()
           addinvoice(nosats);
 
           showAddress(payreq);
-
-          checkpayment();
+          settle = false; // To allow consecutive transactions
           int counta = 0;
           while (settle != true)
           {
@@ -154,8 +163,7 @@ void loop()
             }
             else
             {
-              checkpayment();
-              if (data_status == true)
+              if (data_status == "paid")
               {
                 tft.fillScreen(TFT_BLACK);
                 tft.setCursor(52, 40);
@@ -167,11 +175,12 @@ void loop()
                 settle = true;
               }
             }
-            if (counta > 30)
+            if (counta > 60)
             {
               settle = true;
               cntr = true;
             }
+            delay(500);
           }
         }
       }
@@ -330,54 +339,64 @@ void addinvoice(String nosats)
   Serial.println(payreq);
   payhash = payment_hash;
   Serial.println(payhash);
+  data_status = "unpaid";
 }
 
-void checkpayment()
+void checkpayment(void *pvParameters)
 {
-
-  WiFiClientSecure client;
-
-  if (!client.connect(lnbitshost, httpsPort))
+  Serial.print("checkpayment() running on core ");
+  Serial.println(xPortGetCoreID());
+  while (true)
   {
-    return;
-  }
-  String url = "/api/v1/invoice/";
-  client.print(String("GET ") + url + payhash + " HTTP/1.1\r\n" +
-               "Host: " + lnbitshost + "\r\n" +
-               "User-Agent: ESP32\r\n" +
-               "Grpc-Metadata-macaroon:" + invoicekey + "\r\n" +
-               "Content-Type: application/json\r\n" +
-               "Connection: close\r\n\r\n");
-
-  while (client.connected())
-  {
-    String line = client.readStringUntil('\n');
-    if (line == "\r")
+    if (settle == false)
     {
-      break;
+      Serial.print("checking payment...");
+      WiFiClientSecure client;
+      if (!client.connect(lnbitshost, httpsPort))
+      {
+        return;
+      }
+      String url = "/api/v1/invoice/";
+      client.print(String("GET ") + url + payhash + " HTTP/1.1\r\n" +
+                   "Host: " + lnbitshost + "\r\n" +
+                   "User-Agent: ESP32\r\n" +
+                   "Grpc-Metadata-macaroon:" + invoicekey + "\r\n" +
+                   "Content-Type: application/json\r\n" +
+                   "Connection: close\r\n\r\n");
+
+      while (client.connected())
+      {
+        String line = client.readStringUntil('\n');
+        if (line == "\r")
+        {
+          break;
+        }
+      }
+
+      String line = client.readString();
+
+      Serial.println(line);
+
+      const size_t capacity = JSON_OBJECT_SIZE(1) + 100;
+      DynamicJsonDocument doc(capacity);
+
+      deserializeJson(doc, line);
+
+      const char *PAID = doc["PAID"];
+
+      String paidd = PAID;
+
+      if (paidd == "TRUE")
+      {
+        data_status = "paid";
+        Serial.println(data_status);
+      }
+      else
+      {
+        //data_status = "unpaid";
+      }
     }
-  }
-
-  String line = client.readString();
-  Serial.println(line);
-
-  const size_t capacity = JSON_OBJECT_SIZE(1) + 100;
-  DynamicJsonDocument doc(capacity);
-
-  deserializeJson(doc, line);
-
-  const char *PAID = doc["PAID"];
-
-  String paidd = PAID;
-
-  if (paidd == "TRUE")
-  {
-    data_status = "paid";
-    Serial.println(data_status);
-  }
-  else
-  {
-    data_status = "unpaid";
+    //delay(1000);
   }
 }
 
