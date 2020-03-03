@@ -45,9 +45,11 @@ String fiat;
 float satoshis;
 String nosats;
 float conversion;
+String postid;
+String data_id;
 String data_lightning_invoice_payreq = "";
 String data_status;
-bool cntr = false;
+bool settle = false;
 String payreq;
 String hash;
 String virtkey;
@@ -112,7 +114,8 @@ void loop()
   inputs = "";
   page_input();
   displaysats();
-  cntr = false; // To allow consecutive transactions
+  bool cntr = false;
+  settle = false; // To allow consecutive transactions
   Serial.println("Ready");
   while (cntr != true)
   {
@@ -133,7 +136,7 @@ void loop()
 
           checkpayment();
           int counta = 0;
-          while (cntr != true)
+          while (settle != true)
           {
             counta++;
             virtkey = String(keypad.getKey());
@@ -146,6 +149,7 @@ void loop()
               tft.setTextColor(TFT_RED);
               tft.println("CANCELLED");
               delay(1000);
+              settle = true;
               cntr = true;
             }
             else
@@ -160,10 +164,12 @@ void loop()
                 tft.println("COMPLETE");
                 delay(1000);
                 cntr = true;
+                settle = true;
               }
             }
             if (counta > 30)
             {
+              settle = true;
               cntr = true;
             }
           }
