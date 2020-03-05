@@ -396,7 +396,7 @@ void checkpayment(void *pvParameters)
         //data_status = "unpaid";
       }
     }
-    //delay(1000);
+    delay(500);
   }
 }
 
